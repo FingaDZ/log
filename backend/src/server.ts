@@ -164,6 +164,94 @@ app.get('/api/monitoring', async (req, res) => {
     }
 });
 
+// API: Compress Tables
+app.post('/api/compress-tables', async (req, res) => {
+    try {
+        // Get all log tables
+        const [tables]: any = await pool.query(`
+            SELECT 
+                TABLE_NAME,
+                ROW_FORMAT,
+                ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb,
+                TABLE_ROWS as row_count
+            FROM information_schema.TABLES 
+            WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'logs_%'
+            ORDER BY TABLE_NAME
+        `, [process.env.DB_NAME || 'logser']);
+
+        const results = [];
+        let totalSaved = 0;
+
+        for (const table of tables) {
+            const { TABLE_NAME, ROW_FORMAT, size_mb } = table;
+
+            if (ROW_FORMAT === 'Compressed') {
+                results.push({
+                    table: TABLE_NAME,
+                    status: 'already_compressed',
+                    size_before: size_mb,
+                    size_after: size_mb,
+                    saved: 0
+                });
+                continue;
+            }
+
+            try {
+                // Compress table
+                await pool.query(`
+                    ALTER TABLE \`${TABLE_NAME}\` 
+                    ROW_FORMAT=COMPRESSED 
+                    KEY_BLOCK_SIZE=8
+                `);
+
+                // Optimize to reclaim space
+                await pool.query(`OPTIMIZE TABLE \`${TABLE_NAME}\``);
+
+                // Get new size
+                const [after]: any = await pool.query(`
+                    SELECT ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb
+                    FROM information_schema.TABLES 
+                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+                `, [process.env.DB_NAME || 'logser', TABLE_NAME]);
+
+                const newSize = after[0]?.size_mb || 0;
+                const saved = size_mb - newSize;
+                totalSaved += saved;
+
+                results.push({
+                    table: TABLE_NAME,
+                    status: 'compressed',
+                    size_before: size_mb,
+                    size_after: newSize,
+                    saved: parseFloat(saved.toFixed(2))
+                });
+
+            } catch (error: any) {
+                results.push({
+                    table: TABLE_NAME,
+                    status: 'error',
+                    error: error.message,
+                    size_before: size_mb
+                });
+            }
+        }
+
+        res.json({
+            message: 'Compression completed',
+            total_tables: tables.length,
+            compressed: results.filter(r => r.status === 'compressed').length,
+            already_compressed: results.filter(r => r.status === 'already_compressed').length,
+            errors: results.filter(r => r.status === 'error').length,
+            total_saved_mb: parseFloat(totalSaved.toFixed(2)),
+            results: results
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // API: Delete logs by date range (with safety checks)
 app.post('/api/delete-logs', async (req, res) => {
     try {
