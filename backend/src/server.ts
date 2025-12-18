@@ -68,6 +68,31 @@ app.get('/api/export', async (req, res) => {
             res.setHeader('Content-Type', 'text/csv');
             res.setHeader('Content-Disposition', `attachment; filename="logs_${date || 'today'}.csv"`);
             res.send(csv);
+        } else if (format === 'xlsx') {
+            // Generate Excel
+            const XLSX = require('xlsx');
+
+            const data = rows.map((row: any) => ({
+                'ID': row.id,
+                'Timestamp': row.timestamp,
+                'Username': row.user || 'N/A',
+                'Source IP': row.source_ip || '',
+                'Source Port': row.source_port || '',
+                'Dest IP': row.dest_ip || '',
+                'Dest Port': row.dest_port || '',
+                'Protocol': row.protocol || '',
+                'Message': row.message || ''
+            }));
+
+            const worksheet = XLSX.utils.json_to_sheet(data);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, 'Logs');
+
+            const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename="logs_${date || 'today'}.xlsx"`);
+            res.send(buffer);
         } else {
             res.status(400).json({ error: 'Unsupported format' });
         }
@@ -75,6 +100,115 @@ app.get('/api/export', async (req, res) => {
         if (error.code === 'ER_NO_SUCH_TABLE') {
             return res.status(404).json({ error: 'No logs found for this date.' });
         }
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// API: Database Monitoring
+app.get('/api/monitoring', async (req, res) => {
+    try {
+        // Get all log tables
+        const [tables]: any = await pool.query(`
+            SELECT TABLE_NAME, 
+                   ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb,
+                   TABLE_ROWS as row_count
+            FROM information_schema.TABLES 
+            WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'logs_%'
+            ORDER BY TABLE_NAME DESC
+        `, [process.env.DB_NAME || 'logser']);
+
+        // Calculate total size
+        const totalSizeMB = tables.reduce((sum: number, table: any) => sum + parseFloat(table.size_mb || 0), 0);
+        const totalRows = tables.reduce((sum: number, table: any) => sum + parseInt(table.row_count || 0), 0);
+
+        // Get disk space (Linux only)
+        let diskSpace = null;
+        try {
+            const { execSync } = require('child_process');
+            const dfOutput = execSync('df -h /var/lib/mysql 2>/dev/null || df -h /', { encoding: 'utf-8' });
+            const lines = dfOutput.trim().split('\n');
+            if (lines.length > 1) {
+                const parts = lines[1].split(/\s+/);
+                diskSpace = {
+                    total: parts[1],
+                    used: parts[2],
+                    available: parts[3],
+                    use_percent: parts[4]
+                };
+            }
+        } catch (e) {
+            // Disk space check failed (Windows or permission issue)
+        }
+
+        res.json({
+            tables: tables,
+            summary: {
+                total_tables: tables.length,
+                total_size_mb: Math.round(totalSizeMB * 100) / 100,
+                total_rows: totalRows,
+                oldest_table: tables[tables.length - 1]?.TABLE_NAME || null,
+                newest_table: tables[0]?.TABLE_NAME || null
+            },
+            disk_space: diskSpace,
+            alerts: {
+                db_size_warning: totalSizeMB > 1000, // Warning if > 1GB
+                db_size_critical: totalSizeMB > 5000, // Critical if > 5GB
+                disk_space_warning: diskSpace && parseInt(diskSpace.use_percent) > 80
+            }
+        });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// API: Delete logs by date range (with safety checks)
+app.post('/api/delete-logs', async (req, res) => {
+    try {
+        const { start_date, end_date, confirm_token } = req.body;
+
+        // Safety: Require confirmation token
+        if (confirm_token !== 'DELETE_CONFIRMED') {
+            return res.status(400).json({ error: 'Confirmation token required' });
+        }
+
+        if (!start_date || !end_date) {
+            return res.status(400).json({ error: 'start_date and end_date required' });
+        }
+
+        // Generate list of tables to delete
+        const startDate = new Date(start_date);
+        const endDate = new Date(end_date);
+        const tablesToDelete = [];
+
+        for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const tableName = `logs_${year}${month}${day}`;
+            tablesToDelete.push(tableName);
+        }
+
+        // Delete tables
+        const results = [];
+        for (const table of tablesToDelete) {
+            try {
+                await pool.query(`DROP TABLE IF EXISTS \`${table}\``);
+                results.push({ table, status: 'deleted' });
+            } catch (e: any) {
+                results.push({ table, status: 'error', error: e.message });
+            }
+        }
+
+        res.json({
+            message: 'Deletion completed',
+            deleted_tables: results.filter(r => r.status === 'deleted').length,
+            results: results
+        });
+
+    } catch (error) {
         console.error(error);
         res.status(500).json({ error: 'Internal Server Error' });
     }
