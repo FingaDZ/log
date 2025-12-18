@@ -1,6 +1,8 @@
 import { ConnectionLog, SearchFilters } from '@/types/connection';
 
-const API_URL = 'http://localhost:3000/api';
+// Use current hostname (so it works on LAN) but port 3000
+const hostname = window.location.hostname;
+const API_URL = `http://${hostname}:3000/api`;
 
 export const fetchLogs = async (filters: SearchFilters, page = 1): Promise<{ data: ConnectionLog[], total: number }> => {
     const params = new URLSearchParams();
