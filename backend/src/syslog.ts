@@ -1,6 +1,7 @@
 import dgram from 'dgram';
 import { insertLog } from './db';
 import { parseMikrotikLog } from './parser';
+import { updateLastLogReceived } from './server';
 
 const PORT = 4950;
 const HOST = '0.0.0.0'; // Listen on all interfaces
@@ -16,6 +17,8 @@ export const startSyslogServer = () => {
     server.on('message', async (msg, rinfo) => {
         const rawMessage = msg.toString();
         console.log(`Syslog received: ${rawMessage} from ${rinfo.address}:${rinfo.port}`);
+
+        updateLastLogReceived(); // Track heartbeat
 
         const parsed = parseMikrotikLog(rawMessage);
 

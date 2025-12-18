@@ -9,8 +9,27 @@ dotenv.config();
 const app = express();
 const API_PORT = process.env.PORT || 3000;
 
+// Track last log received time
+let lastLogReceived: Date | null = null;
+
+export const updateLastLogReceived = () => {
+    lastLogReceived = new Date();
+};
+
 app.use(cors());
 app.use(express.json());
+
+// API: System Status
+app.get('/api/status', (req, res) => {
+    const now = new Date();
+    const isOnline = lastLogReceived && (now.getTime() - lastLogReceived.getTime()) < 30000; // 30 seconds
+
+    res.json({
+        mikrotik_online: isOnline,
+        last_log: lastLogReceived ? lastLogReceived.toISOString() : null,
+        server_time: now.toISOString()
+    });
+});
 
 // API: Get Logs
 // Query Params: date (YYYY-MM-DD), search...

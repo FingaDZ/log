@@ -22,14 +22,14 @@ function ProtocolBadge({ protocol }: { protocol: 'TCP' | 'UDP' }) {
 function LogRow({ log }: { log: ConnectionLog }) {
   return (
     <TableRow className="data-row border-border/30">
-      <TableCell className="text-muted-foreground text-sm">{log.date}</TableCell>
-      <TableCell className="font-mono text-sm text-foreground">{log.time}</TableCell>
-      <TableCell className="font-medium text-primary">{log.username}</TableCell>
-      <TableCell className="font-mono text-sm text-foreground">{log.sourceIp}</TableCell>
-      <TableCell className="font-mono text-sm text-muted-foreground">{log.sourcePort}</TableCell>
-      <TableCell className="font-mono text-sm text-foreground">{log.destinationIp}</TableCell>
-      <TableCell className="font-mono text-sm text-muted-foreground">{log.destinationPort}</TableCell>
-      <TableCell><ProtocolBadge protocol={log.protocol} /></TableCell>
+      <TableCell className="text-muted-foreground text-xs py-2">{log.date}</TableCell>
+      <TableCell className="font-mono text-xs text-foreground py-2">{log.time}</TableCell>
+      <TableCell className="font-medium text-primary text-xs py-2">{log.username}</TableCell>
+      <TableCell className="font-mono text-xs text-foreground py-2">{log.sourceIp}</TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground py-2">{log.sourcePort}</TableCell>
+      <TableCell className="font-mono text-xs text-foreground py-2">{log.destinationIp}</TableCell>
+      <TableCell className="font-mono text-xs text-muted-foreground py-2">{log.destinationPort}</TableCell>
+      <TableCell className="py-2"><ProtocolBadge protocol={log.protocol} /></TableCell>
     </TableRow>
   );
 }
@@ -38,7 +38,7 @@ function Pagination({ currentPage, totalPages, onPageChange }: { currentPage: nu
   const getPageNumbers = () => {
     const pages: (number | string)[] = [];
     const showEllipsis = totalPages > 7;
-    
+
     if (!showEllipsis) {
       for (let i = 1; i <= totalPages; i++) pages.push(i);
     } else {
@@ -66,7 +66,7 @@ function Pagination({ currentPage, totalPages, onPageChange }: { currentPage: nu
       <div className="text-sm text-muted-foreground">
         Page {currentPage} sur {totalPages}
       </div>
-      
+
       <div className="flex items-center gap-1">
         <Button
           variant="outline"
@@ -86,7 +86,7 @@ function Pagination({ currentPage, totalPages, onPageChange }: { currentPage: nu
         >
           <ChevronLeft className="w-4 h-4" />
         </Button>
-        
+
         {getPageNumbers().map((page, index) => (
           typeof page === 'number' ? (
             <Button
@@ -94,8 +94,8 @@ function Pagination({ currentPage, totalPages, onPageChange }: { currentPage: nu
               variant={currentPage === page ? "default" : "outline"}
               size="sm"
               onClick={() => onPageChange(page)}
-              className={currentPage === page 
-                ? "bg-primary text-primary-foreground" 
+              className={currentPage === page
+                ? "bg-primary text-primary-foreground"
                 : "border-border hover:bg-secondary"
               }
             >
@@ -105,7 +105,7 @@ function Pagination({ currentPage, totalPages, onPageChange }: { currentPage: nu
             <span key={index} className="px-2 text-muted-foreground">...</span>
           )
         ))}
-        
+
         <Button
           variant="outline"
           size="sm"
@@ -141,8 +141,8 @@ export function ConnectionTable({ logs, totalCount, currentPage, totalPages, onP
   }
 
   return (
-    <div className="glass-card p-6 animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
+    <div className="glass-card p-4 animate-fade-in">
+      <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
           <div className="p-2 rounded-lg bg-accent/20 glow-accent">
             <Activity className="w-5 h-5 text-accent" />
