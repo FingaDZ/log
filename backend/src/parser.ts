@@ -10,6 +10,7 @@ export interface ParsedLog {
     dest_port?: number;
     protocol?: string;
     message: string;
+    user?: string;
 }
 
 export const parseMikrotikLog = (message: string): ParsedLog => {
@@ -32,6 +33,14 @@ export const parseMikrotikLog = (message: string): ParsedLog => {
     const protoMatch = message.match(protoRegex);
     if (protoMatch) {
         result.protocol = protoMatch[1];
+    }
+
+    // Username from PPPoE
+    // Pattern: in:<pppoe-username>
+    const pppoeRegex = /in:<pppoe-([^>]+)>/;
+    const pppoeMatch = message.match(pppoeRegex);
+    if (pppoeMatch) {
+        result.user = pppoeMatch[1];
     }
 
     return result;
