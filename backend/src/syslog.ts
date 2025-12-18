@@ -15,7 +15,7 @@ export const startSyslogServer = () => {
 
     server.on('message', async (msg, rinfo) => {
         const rawMessage = msg.toString();
-        // console.log(`Syslog received: ${rawMessage} from ${rinfo.address}:${rinfo.port}`);
+        console.log(`Syslog received: ${rawMessage} from ${rinfo.address}:${rinfo.port}`);
 
         const parsed = parseMikrotikLog(rawMessage);
 
