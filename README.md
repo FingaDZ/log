@@ -20,8 +20,8 @@ See the detailed [Deployment Guide](UBUNTU_DEPLOY.md).
 
 Quick Start:
 ```bash
-git clone https://github.com/FingaDZ/Log-Server-AIRBAND.git
-cd Log-Server-AIRBAND
+git clone https://github.com/FingaDZ/log.git
+cd log
 
 # Setup Backend
 cd backend

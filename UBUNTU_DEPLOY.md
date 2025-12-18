@@ -35,8 +35,8 @@ Since you requested to use GitHub as the source:
 
 ```bash
 # 1. Clone the Repo
-git clone https://github.com/FingaDZ/Log-Server-AIRBAND.git
-cd Log-Server-AIRBAND
+git clone https://github.com/FingaDZ/log.git
+cd log
 
 # 2. Setup Backend
 cd backend
