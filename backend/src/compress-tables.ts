@@ -5,75 +5,100 @@ dotenv.config();
 
 /**
  * Compress existing log tables to save disk space
- * Run this script once to compress all existing tables
+ * SAFE: Only compresses, does not delete data
  * 
- * Usage: node dist/compress-tables.js
+ * Usage: 
+ *   Dry run: node dist/compress-tables.js --dry-run
+ *   Execute: node dist/compress-tables.js
  */
+
+const DRY_RUN = process.argv.includes('--dry-run');
 
 async function compressExistingTables() {
     try {
-        console.log('🗜️  Starting table compression...\n');
+        console.log('🗜️  Starting table compression...');
+        if (DRY_RUN) {
+            console.log('⚠️  DRY RUN MODE - No changes will be made\n');
+        } else {
+            console.log('⚠️  LIVE MODE - Tables will be compressed\n');
+        }
 
         // Get all log tables
         const [tables]: any = await pool.query(`
-            SELECT TABLE_NAME 
+            SELECT 
+                TABLE_NAME,
+                ROW_FORMAT,
+                ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb,
+                TABLE_ROWS as row_count
             FROM information_schema.TABLES 
             WHERE TABLE_SCHEMA = ? AND TABLE_NAME LIKE 'logs_%'
             ORDER BY TABLE_NAME
         `, [process.env.DB_NAME || 'logser']);
 
-        console.log(`Found ${tables.length} tables to compress\n`);
+        console.log(`Found ${tables.length} tables\n`);
 
-        let compressed = 0;
-        let failed = 0;
+        let toCompress = 0;
+        let alreadyCompressed = 0;
+        let totalSavingsEstimate = 0;
 
-        for (const { TABLE_NAME } of tables) {
-            try {
-                console.log(`Compressing ${TABLE_NAME}...`);
+        for (const table of tables) {
+            const { TABLE_NAME, ROW_FORMAT, size_mb, row_count } = table;
 
-                // Get size before
-                const [before]: any = await pool.query(`
-                    SELECT ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb
-                    FROM information_schema.TABLES 
-                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-                `, [process.env.DB_NAME || 'logser', TABLE_NAME]);
+            if (ROW_FORMAT === 'Compressed') {
+                console.log(`✅ ${TABLE_NAME}: Already compressed (${size_mb}MB, ${row_count} rows)`);
+                alreadyCompressed++;
+                continue;
+            }
 
-                const sizeBefore = before[0]?.size_mb || 0;
+            const estimatedSavings = size_mb * 0.6; // Estimate 60% reduction
+            totalSavingsEstimate += estimatedSavings;
+            toCompress++;
 
-                // Compress table
-                await pool.query(`
-                    ALTER TABLE \`${TABLE_NAME}\` 
-                    ROW_FORMAT=COMPRESSED 
-                    KEY_BLOCK_SIZE=8
-                `);
+            console.log(`📦 ${TABLE_NAME}: ${size_mb}MB, ${row_count} rows (est. savings: ${estimatedSavings.toFixed(2)}MB)`);
 
-                // Optimize to reclaim space
-                await pool.query(`OPTIMIZE TABLE \`${TABLE_NAME}\``);
+            if (!DRY_RUN) {
+                try {
+                    // Compress table
+                    console.log(`   Compressing...`);
+                    await pool.query(`
+                        ALTER TABLE \`${TABLE_NAME}\` 
+                        ROW_FORMAT=COMPRESSED 
+                        KEY_BLOCK_SIZE=8
+                    `);
 
-                // Get size after
-                const [after]: any = await pool.query(`
-                    SELECT ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb
-                    FROM information_schema.TABLES 
-                    WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-                `, [process.env.DB_NAME || 'logser', TABLE_NAME]);
+                    // Optimize to reclaim space
+                    console.log(`   Optimizing...`);
+                    await pool.query(`OPTIMIZE TABLE \`${TABLE_NAME}\``);
 
-                const sizeAfter = after[0]?.size_mb || 0;
-                const saved = sizeBefore - sizeAfter;
-                const percent = sizeBefore > 0 ? ((saved / sizeBefore) * 100).toFixed(1) : 0;
+                    // Get new size
+                    const [after]: any = await pool.query(`
+                        SELECT ROUND((DATA_LENGTH + INDEX_LENGTH) / 1024 / 1024, 2) AS size_mb
+                        FROM information_schema.TABLES 
+                        WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+                    `, [process.env.DB_NAME || 'logser', TABLE_NAME]);
 
-                console.log(`  ✅ ${TABLE_NAME}: ${sizeBefore}MB → ${sizeAfter}MB (saved ${saved}MB, ${percent}%)\n`);
-                compressed++;
+                    const newSize = after[0]?.size_mb || 0;
+                    const actualSavings = size_mb - newSize;
+                    const percent = size_mb > 0 ? ((actualSavings / size_mb) * 100).toFixed(1) : 0;
 
-            } catch (error: any) {
-                console.error(`  ❌ Failed to compress ${TABLE_NAME}:`, error.message);
-                failed++;
+                    console.log(`   ✅ ${size_mb}MB → ${newSize}MB (saved ${actualSavings.toFixed(2)}MB, ${percent}%)\n`);
+
+                } catch (error: any) {
+                    console.error(`   ❌ Failed: ${error.message}\n`);
+                }
             }
         }
 
-        console.log('\n📊 Compression Summary:');
-        console.log(`  ✅ Compressed: ${compressed} tables`);
-        console.log(`  ❌ Failed: ${failed} tables`);
-        console.log('\n✨ Compression complete!');
+        console.log('\n📊 Summary:');
+        console.log(`  ✅ Already compressed: ${alreadyCompressed} tables`);
+        console.log(`  📦 To compress: ${toCompress} tables`);
+        console.log(`  💾 Estimated savings: ${totalSavingsEstimate.toFixed(2)}MB`);
+
+        if (DRY_RUN) {
+            console.log('\n💡 Run without --dry-run to apply compression');
+        } else {
+            console.log('\n✨ Compression complete!');
+        }
 
         process.exit(0);
 

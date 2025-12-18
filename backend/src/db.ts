@@ -22,34 +22,54 @@ export const getTableName = (date: Date = new Date()) => {
 
 // Check and Create Table if not exists
 export const ensureDailyTableExists = async (tableName: string) => {
-  const createTableQuery = `
-    CREATE TABLE IF NOT EXISTS \`${tableName}\` (
-      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
-      \`timestamp\` DATETIME NOT NULL,
-      \`source_ip\` VARCHAR(45),
-      \`source_port\` INT,
-      \`dest_ip\` VARCHAR(45),
-      \`dest_port\` INT,
-      \`protocol\` VARCHAR(20),
-      \`user\` VARCHAR(255),
-      \`message\` TEXT,
-      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-  `;
-
   try {
     const connection = await pool.getConnection();
-    // Check if column exists (for existing tables) because 'CREATE TABLE IF NOT EXISTS' won't add columns
-    try {
-      await connection.query(`ALTER TABLE \`${tableName}\` ADD COLUMN \`user\` VARCHAR(255) AFTER \`protocol\``);
-    } catch (e) {
-      // Ignore error if column already exists
+
+    // Check if table already exists
+    const [existing]: any = await connection.query(`
+      SELECT TABLE_NAME 
+      FROM information_schema.TABLES 
+      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+    `, [process.env.DB_NAME || 'logser', tableName]);
+
+    if (existing.length > 0) {
+      // Table exists - only ensure 'user' column exists (backward compatibility)
+      try {
+        await connection.query(`ALTER TABLE \`${tableName}\` ADD COLUMN \`user\` VARCHAR(255) AFTER \`protocol\``);
+        console.log(`Added 'user' column to existing table: ${tableName}`);
+      } catch (e) {
+        // Column already exists, ignore
+      }
+    } else {
+      // New table - create with optimized schema
+      const createTableQuery = `
+        CREATE TABLE \`${tableName}\` (
+          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+          \`timestamp\` DATETIME NOT NULL,
+          \`source_ip\` VARCHAR(45),
+          \`source_port\` SMALLINT UNSIGNED,
+          \`dest_ip\` VARCHAR(45),
+          \`dest_port\` SMALLINT UNSIGNED,
+          \`protocol\` VARCHAR(10),
+          \`user\` VARCHAR(64),
+          \`message\` VARCHAR(512),
+          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          INDEX idx_timestamp (\`timestamp\`),
+          INDEX idx_user (\`user\`)
+        ) ENGINE=InnoDB 
+          ROW_FORMAT=COMPRESSED 
+          KEY_BLOCK_SIZE=8 
+          DEFAULT CHARSET=utf8mb4 
+          COLLATE=utf8mb4_unicode_ci;
+      `;
+
+      await connection.query(createTableQuery);
+      console.log(`Created new optimized table: ${tableName}`);
     }
 
-    await connection.query(createTableQuery);
     connection.release();
   } catch (error) {
-    console.error(`Error creating table ${tableName}:`, error);
+    console.error(`Error ensuring table ${tableName}:`, error);
   }
 };
 
