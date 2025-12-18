@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { BarChart3 } from 'lucide-react';
+import { BarChart3, Wifi } from 'lucide-react';
 
 export function Header() {
   const [mikrotikOnline, setMikrotikOnline] = useState(false);
+  const [logoError, setLogoError] = useState(false);
   const location = useLocation();
 
   useEffect(() => {
@@ -20,7 +21,7 @@ export function Header() {
     };
 
     checkStatus();
-    const interval = setInterval(checkStatus, 5000); // Poll every 5 seconds
+    const interval = setInterval(checkStatus, 5000);
     return () => clearInterval(interval);
   }, []);
 
@@ -30,7 +31,18 @@ export function Header() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <img src="/logo.jpg" alt="Logo" className="w-8 h-8 rounded" />
+              {!logoError ? (
+                <img
+                  src="/logo.jpg"
+                  alt="Logo"
+                  className="w-8 h-8 rounded object-cover"
+                  onError={() => setLogoError(true)}
+                />
+              ) : (
+                <div className="p-2 rounded-lg bg-primary/20 glow-primary">
+                  <Wifi className="w-4 h-4 text-primary" />
+                </div>
+              )}
               <div>
                 <h1 className="text-xl font-bold text-foreground">AIRBAND Customers Log Management</h1>
                 <p className="text-xs text-muted-foreground">Connection Log Manager</p>
