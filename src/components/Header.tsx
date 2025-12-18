@@ -1,7 +1,11 @@
 import { useEffect, useState } from 'react';
+import { Link, useLocation } from 'react-router-dom';
+import { Button } from '@/components/ui/button';
+import { BarChart3 } from 'lucide-react';
 
 export function Header() {
   const [mikrotikOnline, setMikrotikOnline] = useState(false);
+  const location = useLocation();
 
   useEffect(() => {
     const checkStatus = async () => {
@@ -26,12 +30,34 @@ export function Header() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <img src="/mini square logo.jpg" alt="Logo" className="w-8 h-8 rounded" />
+              <img src="/logo.jpg" alt="Logo" className="w-8 h-8 rounded" />
               <div>
                 <h1 className="text-xl font-bold text-foreground">AIRBAND Customers Log Management</h1>
                 <p className="text-xs text-muted-foreground">Connection Log Manager</p>
               </div>
             </div>
+          </div>
+
+          <div className="flex items-center gap-4">
+            <Link to="/">
+              <Button
+                variant={location.pathname === '/' ? 'default' : 'outline'}
+                size="sm"
+                className="text-xs"
+              >
+                Logs
+              </Button>
+            </Link>
+            <Link to="/stats">
+              <Button
+                variant={location.pathname === '/stats' ? 'default' : 'outline'}
+                size="sm"
+                className="text-xs"
+              >
+                <BarChart3 className="w-3 h-3 mr-1" />
+                Statistics
+              </Button>
+            </Link>
           </div>
 
           <div className="flex items-center gap-4">

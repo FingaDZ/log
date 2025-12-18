@@ -80,6 +80,64 @@ app.get('/api/export', async (req, res) => {
     }
 });
 
+// API: Statistics
+app.get('/api/stats', async (req, res) => {
+    try {
+        const { date } = req.query;
+
+        let targetTable = getTableName();
+        if (date) {
+            targetTable = `logs_${(date as string).replace(/-/g, '')}`;
+        }
+
+        // Top 10 Users
+        const [topUsers]: any = await pool.query(`
+            SELECT user, COUNT(*) as count 
+            FROM \`${targetTable}\` 
+            WHERE user IS NOT NULL AND user != 'N/A'
+            GROUP BY user 
+            ORDER BY count DESC 
+            LIMIT 10
+        `);
+
+        // Protocol Distribution
+        const [protocols]: any = await pool.query(`
+            SELECT protocol, COUNT(*) as count 
+            FROM \`${targetTable}\` 
+            WHERE protocol IS NOT NULL
+            GROUP BY protocol 
+            ORDER BY count DESC
+        `);
+
+        // Top 10 Destination IPs
+        const [topDestIps]: any = await pool.query(`
+            SELECT dest_ip, COUNT(*) as count 
+            FROM \`${targetTable}\` 
+            WHERE dest_ip IS NOT NULL
+            GROUP BY dest_ip 
+            ORDER BY count DESC 
+            LIMIT 10
+        `);
+
+        res.json({
+            top_users: topUsers,
+            protocols: protocols,
+            top_destinations: topDestIps
+        });
+
+    } catch (error: any) {
+        if (error.code === 'ER_NO_SUCH_TABLE') {
+            return res.json({
+                top_users: [],
+                protocols: [],
+                top_destinations: []
+            });
+        }
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // API: Get Logs
 // Query Params: date (YYYY-MM-DD), search...
 app.get('/api/logs', async (req, res) => {
