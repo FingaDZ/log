@@ -1,10 +1,12 @@
-import { useState, useMemo, useEffect } from 'react';
+```javascript
+import { useState, useMemo } from 'react';
 import { Header } from '@/components/Header';
 import { SearchFilters } from '@/components/SearchFilters';
 import { ConnectionTable } from '@/components/ConnectionTable';
+import { ExportButton } from '@/components/ExportButton';
 // import { mockConnectionLogs } from '@/data/mockData'; // Removed Mock
 import { fetchLogs } from '@/lib/api';
-import { SearchFilters as SearchFiltersType, ConnectionLog } from '@/types/connection';
+import { SearchFilters as SearchFiltersType } from '@/types/connection';
 import { useQuery } from '@tanstack/react-query';
 
 const ITEMS_PER_PAGE = 50;
@@ -64,14 +66,18 @@ export default function Index() {
           onSearch={handleSearch}
           onReset={handleReset}
         />
+        
+        <div className="flex justify-end">
+          <ExportButton currentDate={appliedFilters.startDate} />
+        </div>
 
         {isLoading && <div className="text-center">Loading logs...</div>}
         {error && <div className="text-red-500 text-center">Error loading logs. Check Backend Connection.</div>}
 
         {!isLoading && !error && (
           <ConnectionTable
-            logs={logs}
-            totalCount={logs.length} // Temporary
+            logs={data?.data || []}
+            totalCount={data?.total || 0}
             currentPage={currentPage}
             totalPages={totalPages}
             onPageChange={handlePageChange}

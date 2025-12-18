@@ -31,6 +31,55 @@ app.get('/api/status', (req, res) => {
     });
 });
 
+// API: Export Logs as CSV
+app.get('/api/export', async (req, res) => {
+    try {
+        const { date, format = 'csv' } = req.query;
+
+        let targetTable = getTableName();
+        if (date) {
+            targetTable = `logs_${(date as string).replace(/-/g, '')}`;
+        }
+
+        const query = `SELECT * FROM \`${targetTable}\` ORDER BY id DESC`;
+        const [rows]: any = await pool.query(query);
+
+        if (format === 'csv') {
+            // Generate CSV
+            const headers = ['ID', 'Timestamp', 'Username', 'Source IP', 'Source Port', 'Dest IP', 'Dest Port', 'Protocol', 'Message'];
+            const csvRows = [headers.join(',')];
+
+            rows.forEach((row: any) => {
+                const values = [
+                    row.id,
+                    row.timestamp,
+                    row.user || 'N/A',
+                    row.source_ip || '',
+                    row.source_port || '',
+                    row.dest_ip || '',
+                    row.dest_port || '',
+                    row.protocol || '',
+                    `"${(row.message || '').replace(/"/g, '""')}"` // Escape quotes
+                ];
+                csvRows.push(values.join(','));
+            });
+
+            const csv = csvRows.join('\n');
+            res.setHeader('Content-Type', 'text/csv');
+            res.setHeader('Content-Disposition', `attachment; filename="logs_${date || 'today'}.csv"`);
+            res.send(csv);
+        } else {
+            res.status(400).json({ error: 'Unsupported format' });
+        }
+    } catch (error: any) {
+        if (error.code === 'ER_NO_SUCH_TABLE') {
+            return res.status(404).json({ error: 'No logs found for this date.' });
+        }
+        console.error(error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
 // API: Get Logs
 // Query Params: date (YYYY-MM-DD), search...
 app.get('/api/logs', async (req, res) => {
