@@ -31,6 +31,7 @@ export const ensureDailyTableExists = async (tableName: string) => {
       \`dest_ip\` VARCHAR(45),
       \`dest_port\` INT,
       \`protocol\` VARCHAR(20),
+      \`user\` VARCHAR(255),
       \`message\` TEXT,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -38,9 +39,15 @@ export const ensureDailyTableExists = async (tableName: string) => {
 
   try {
     const connection = await pool.getConnection();
+    // Check if column exists (for existing tables) because 'CREATE TABLE IF NOT EXISTS' won't add columns
+    try {
+      await connection.query(`ALTER TABLE \`${tableName}\` ADD COLUMN \`user\` VARCHAR(255) AFTER \`protocol\``);
+    } catch (e) {
+      // Ignore error if column already exists
+    }
+
     await connection.query(createTableQuery);
     connection.release();
-    // console.log(`Ensured table ${tableName} exists.`);
   } catch (error) {
     console.error(`Error creating table ${tableName}:`, error);
   }
@@ -49,18 +56,12 @@ export const ensureDailyTableExists = async (tableName: string) => {
 export const insertLog = async (logData: any) => {
   const tableName = getTableName();
 
-  // Optimistic: Try insert. If fails (table doesn't exist), create then insert. 
-  // BUT 'Table doesn't exist' is a specific error code. 
-  // Simpler: Just ensure table exists periodically or lazily.
-  // For high throughput, we might want to cache 'table created for today'.
-
-  // For now, let's just ensure it exists. (Optimization: Cache this check in memory)
   await ensureDailyTableExists(tableName);
 
   const query = `
         INSERT INTO \`${tableName}\` 
-        (timestamp, source_ip, source_port, dest_ip, dest_port, protocol, message)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (timestamp, source_ip, source_port, dest_ip, dest_port, protocol, user, message)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
   const values = [
@@ -70,6 +71,7 @@ export const insertLog = async (logData: any) => {
     logData.dest_ip || null,
     logData.dest_port || null,
     logData.protocol || 'UNKNOWN',
+    logData.user || null,
     logData.message || ''
   ];
 
