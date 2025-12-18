@@ -164,6 +164,80 @@ app.get('/api/monitoring', async (req, res) => {
     }
 });
 
+// API: Database Backup
+app.get('/api/backup', async (req, res) => {
+    try {
+        const { start_date, end_date } = req.query;
+        const { execSync } = require('child_process');
+        const fs = require('fs');
+        const path = require('path');
+
+        const dbName = process.env.DB_NAME || 'logser';
+        const dbUser = process.env.DB_USER || 'adel';
+        const dbPassword = process.env.DB_PASSWORD || '';
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+
+        let filename: string;
+        let mysqldumpCmd: string;
+
+        if (start_date && end_date) {
+            // Partial backup (specific date range)
+            const startTable = `logs_${(start_date as string).replace(/-/g, '')}`;
+            const endTable = `logs_${(end_date as string).replace(/-/g, '')}`;
+
+            // Get tables in range
+            const [tables]: any = await pool.query(`
+                SELECT TABLE_NAME 
+                FROM information_schema.TABLES 
+                WHERE TABLE_SCHEMA = ? 
+                  AND TABLE_NAME LIKE 'logs_%'
+                  AND TABLE_NAME >= ?
+                  AND TABLE_NAME <= ?
+                ORDER BY TABLE_NAME
+            `, [dbName, startTable, endTable]);
+
+            if (tables.length === 0) {
+                return res.status(404).json({ error: 'No tables found in date range' });
+            }
+
+            const tableNames = tables.map((t: any) => t.TABLE_NAME).join(' ');
+            filename = `backup_${start_date}_to_${end_date}_${timestamp}.sql`;
+            mysqldumpCmd = `mysqldump -u ${dbUser} -p'${dbPassword}' ${dbName} ${tableNames}`;
+
+        } else {
+            // Full backup
+            filename = `backup_full_${timestamp}.sql`;
+            mysqldumpCmd = `mysqldump -u ${dbUser} -p'${dbPassword}' ${dbName}`;
+        }
+
+        const tempFile = path.join('/tmp', filename);
+
+        // Execute mysqldump
+        execSync(`${mysqldumpCmd} > ${tempFile}`);
+
+        // Check file size
+        const stats = fs.statSync(tempFile);
+        const fileSizeMB = stats.size / 1024 / 1024;
+
+        // Send file
+        res.setHeader('Content-Type', 'application/sql');
+        res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+        res.setHeader('Content-Length', stats.size);
+
+        const fileStream = fs.createReadStream(tempFile);
+        fileStream.pipe(res);
+
+        fileStream.on('end', () => {
+            // Delete temp file
+            fs.unlinkSync(tempFile);
+        });
+
+    } catch (error: any) {
+        console.error('Backup error:', error);
+        res.status(500).json({ error: 'Backup failed', message: error.message });
+    }
+});
+
 // API: Compress Tables
 app.post('/api/compress-tables', async (req, res) => {
     try {
