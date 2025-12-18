@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
-import { BarChart3, Wifi } from 'lucide-react';
+import { BarChart3, Wifi, Database } from 'lucide-react';
 
 export function Header() {
   const [mikrotikOnline, setMikrotikOnline] = useState(false);
