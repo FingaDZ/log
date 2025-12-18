@@ -1,5 +1,7 @@
 const mysql = require('mysql2/promise');
 const readline = require('readline');
+const fs = require('fs');
+const path = require('path');
 
 const rl = readline.createInterface({
     input: process.stdin,
@@ -10,49 +12,66 @@ const question = (str) => new Promise(resolve => rl.question(str, resolve));
 
 async function setup() {
     console.log("--- Log Server Database Setup ---");
-    console.log("This script will create the database and user for you.");
 
-    // 1. Connect as Root
-    const rootHost = await question("Enter MySQL Host (default: localhost): ") || 'localhost';
-    const rootUser = await question("Enter MySQL Root User (default: root): ") || 'root';
-    const rootPass = await question("Enter MySQL Root Password: ");
+    // 1. Get Configuration
+    const dbHost = await question("Enter MariaDB Host (default: localhost): ") || 'localhost';
+    const dbName = await question("Enter Database Name (default: logser): ") || 'logser';
+    const dbUser = await question("Enter App User (default: adel): ") || 'adel';
+    const dbPass = await question("Enter App Password (default: secure_password): ") || 'secure_password';
 
-    try {
-        const connection = await mysql.createConnection({
-            host: rootHost,
-            user: rootUser,
-            password: rootPass
-        });
+    // 2. Try to Administer (Optional)
+    const doAdmin = await question("Do you want to create the DB/User now? (y/n, default: y): ");
 
-        console.log("Connected to MySQL!");
+    if (doAdmin.toLowerCase() !== 'n') {
+        const rootUser = await question("Enter Root/Admin User (default: root): ") || 'root';
+        const rootPass = await question("Enter Root/Admin Password: ");
 
-        // 2. Create DB and User
-        const dbName = 'logser';
-        const dbUser = 'adel';
-        const dbPass = 'secure_password'; // In real app, ask for this or generate
+        try {
+            const connection = await mysql.createConnection({
+                host: dbHost,
+                user: rootUser,
+                password: rootPass
+            });
+            console.log("Connected as Admin!");
 
-        console.log(`Creating Database '${dbName}'...`);
-        await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`);
+            console.log(`Creating Database '${dbName}'...`);
+            await connection.query(`CREATE DATABASE IF NOT EXISTS \`${dbName}\`;`);
 
-        console.log(`Creating User '${dbUser}'...`);
-        // Note: 'mysql_native_password' might be needed depending on MySQL version. 
-        // For modern MySQL 8, caching_sha2_password is default.
-        await connection.query(`CREATE USER IF NOT EXISTS '${dbUser}'@'%' IDENTIFIED BY '${dbPass}';`);
+            // Only try to create user if different from root
+            if (dbUser !== rootUser) {
+                console.log(`Creating User '${dbUser}'...`);
+                // Note: This might fail if user exists, but we catch it.
+                // We use IF NOT EXISTS logic implicitly by catching or 'CREATE USER IF NOT EXISTS'
+                try {
+                    await connection.query(`CREATE USER IF NOT EXISTS '${dbUser}'@'%' IDENTIFIED BY '${dbPass}';`);
+                    await connection.query(`GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${dbUser}'@'%';`);
+                    await connection.query(`FLUSH PRIVILEGES;`);
+                    console.log("User created/granted successfully.");
+                } catch (e) {
+                    console.log("Warning: Could not create/grant user (might already exist or permission denied). Continuing...");
+                }
+            }
 
-        console.log(`Granting privileges...`);
-        await connection.query(`GRANT ALL PRIVILEGES ON \`${dbName}\`.* TO '${dbUser}'@'%';`);
-        await connection.query(`FLUSH PRIVILEGES;`);
-
-        console.log("\n--- Setup Complete ---");
-        console.log(`Database: ${dbName}`);
-        console.log(`User:     ${dbUser}`);
-        console.log(`Password: ${dbPass}`);
-        console.log("\nPlease update your .env file with these credentials.");
-
-        await connection.end();
-    } catch (error) {
-        console.error("Setup Failed:", error.message);
+            await connection.end();
+        } catch (error) {
+            console.error("Admin Setup skipped/failed:", error.message);
+            console.log("Assuming Database and User already exist. Proceeding to config...");
+        }
     }
+
+    // 3. Write .env file
+    const envContent = `DB_HOST=${dbHost}
+DB_USER=${dbUser}
+DB_PASSWORD=${dbPass}
+DB_NAME=${dbName}
+PORT=3000
+SYSLOG_PORT=4950
+`;
+
+    fs.writeFileSync(path.join(__dirname, '.env'), envContent);
+    console.log("\n--- Success ---");
+    console.log("Created .env file with your configuration.");
+    console.log("Note: Tables are created AUTOMATICALLY when the first log is received.");
 
     rl.close();
 }
