@@ -70,6 +70,16 @@ export function Header() {
                 Statistics
               </Button>
             </Link>
+            <Link to="/monitoring">
+              <Button
+                variant={location.pathname === '/monitoring' ? 'default' : 'outline'}
+                size="sm"
+                className="text-xs"
+              >
+                <Database className="w-3 h-3 mr-1" />
+                Monitoring
+              </Button>
+            </Link>
           </div>
 
           <div className="flex items-center gap-4">
