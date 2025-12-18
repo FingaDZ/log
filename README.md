@@ -105,8 +105,8 @@ mysql -u root -p
 
 ```sql
 CREATE DATABASE logser;
-CREATE USER 'adel'@'localhost' IDENTIFIED BY '!Yara@2014';
-GRANT ALL PRIVILEGES ON logser.* TO 'adel'@'localhost';
+CREATE USER 'your_db_user'@'localhost' IDENTIFIED BY 'your_secure_password';
+GRANT ALL PRIVILEGES ON logser.* TO 'your_db_user'@'localhost';
 FLUSH PRIVILEGES;
 EXIT;
 ```
@@ -124,7 +124,10 @@ npm run build
 # Backend
 cd backend
 cp .env.example .env
-# Edit .env with your database credentials
+# IMPORTANT: Edit .env with YOUR database credentials
+# DB_USER=your_db_user
+# DB_PASSWORD=your_secure_password
+# DB_NAME=logser
 npm install
 npm run build
 cd ..
