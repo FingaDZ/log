@@ -1,71 +1,63 @@
 import mysql from 'mysql2/promise';
 import { format } from 'date-fns';
-import dotenv from 'dotenv';
+import type { Pool } from 'mysql2/promise';
 
-dotenv.config();
+// Lazy pool creation - will be created on first use
+let _pool: Pool | null = null;
 
-// Create connection pool
-export const pool = mysql.createPool({
-  host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'adel',
-  password: process.env.DB_PASSWORD || 'password',
-  database: process.env.DB_NAME || 'logser',
-  waitForConnections: true,
-  connectionLimit: 10,
-  queueLimit: 0
+export const getPool = (): Pool => {
+  if (!_pool) {
+    _pool = mysql.createPool({
+      host: process.env.DB_HOST || '127.0.0.1',
+      user: process.env.DB_USER || 'adel',
+      password: process.env.DB_PASSWORD || '!Yara@2014',
+      database: process.env.DB_NAME || 'logser',
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    });
+  }
+  return _pool;
+};
+
+// For backward compatibility
+export const pool = new Proxy({} as Pool, {
+  get: (target, prop) => {
+    return (getPool() as any)[prop];
+  }
 });
 
-// Helper to get Table Name for a given Date
 export const getTableName = (date: Date = new Date()) => {
   return `logs_${format(date, 'yyyyMMdd')}`;
 };
 
-// Check and Create Table if not exists
 export const ensureDailyTableExists = async (tableName: string) => {
   try {
-    const connection = await pool.getConnection();
+    const connection = await getPool().getConnection();
 
-    // Check if table already exists
-    const [existing]: any = await connection.query(`
-      SELECT TABLE_NAME 
-      FROM information_schema.TABLES 
-      WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
-    `, [process.env.DB_NAME || 'logser', tableName]);
+    // Using IF NOT EXISTS to prevent errors if table already exists
+    const createTableQuery = `
+      CREATE TABLE IF NOT EXISTS \`${tableName}\` (
+        \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+        \`timestamp\` DATETIME NOT NULL,
+        \`source_ip\` VARCHAR(45),
+        \`source_port\` SMALLINT UNSIGNED,
+        \`dest_ip\` VARCHAR(45),
+        \`dest_port\` SMALLINT UNSIGNED,
+        \`protocol\` VARCHAR(10),
+        \`user\` VARCHAR(64),
+        \`message\` VARCHAR(512),
+        \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        INDEX idx_timestamp (\`timestamp\`),
+        INDEX idx_user (\`user\`)
+      ) ENGINE=InnoDB 
+        ROW_FORMAT=COMPRESSED 
+        KEY_BLOCK_SIZE=8 
+        DEFAULT CHARSET=utf8mb4 
+        COLLATE=utf8mb4_unicode_ci;
+    `;
 
-    if (existing.length > 0) {
-      // Table exists - only ensure 'user' column exists (backward compatibility)
-      try {
-        await connection.query(`ALTER TABLE \`${tableName}\` ADD COLUMN \`user\` VARCHAR(255) AFTER \`protocol\``);
-        console.log(`Added 'user' column to existing table: ${tableName}`);
-      } catch (e) {
-        // Column already exists, ignore
-      }
-    } else {
-      // New table - create with optimized schema
-      const createTableQuery = `
-        CREATE TABLE \`${tableName}\` (
-          \`id\` INT AUTO_INCREMENT PRIMARY KEY,
-          \`timestamp\` DATETIME NOT NULL,
-          \`source_ip\` VARCHAR(45),
-          \`source_port\` SMALLINT UNSIGNED,
-          \`dest_ip\` VARCHAR(45),
-          \`dest_port\` SMALLINT UNSIGNED,
-          \`protocol\` VARCHAR(10),
-          \`user\` VARCHAR(64),
-          \`message\` VARCHAR(512),
-          \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          INDEX idx_timestamp (\`timestamp\`),
-          INDEX idx_user (\`user\`)
-        ) ENGINE=InnoDB 
-          ROW_FORMAT=COMPRESSED 
-          KEY_BLOCK_SIZE=8 
-          DEFAULT CHARSET=utf8mb4 
-          COLLATE=utf8mb4_unicode_ci;
-      `;
-
-      await connection.query(createTableQuery);
-      console.log(`Created new optimized table: ${tableName}`);
-    }
+    await connection.query(createTableQuery);
 
     connection.release();
   } catch (error) {
@@ -75,14 +67,13 @@ export const ensureDailyTableExists = async (tableName: string) => {
 
 export const insertLog = async (logData: any) => {
   const tableName = getTableName();
-
   await ensureDailyTableExists(tableName);
 
   const query = `
-        INSERT INTO \`${tableName}\` 
-        (timestamp, source_ip, source_port, dest_ip, dest_port, protocol, user, message)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
+    INSERT INTO \`${tableName}\` 
+    (timestamp, source_ip, source_port, dest_ip, dest_port, protocol, user, message)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `;
 
   const values = [
     new Date(),
@@ -96,7 +87,7 @@ export const insertLog = async (logData: any) => {
   ];
 
   try {
-    const [result] = await pool.query(query, values);
+    const [result] = await getPool().query(query, values);
     return result;
   } catch (error) {
     console.error('Error inserting log:', error);

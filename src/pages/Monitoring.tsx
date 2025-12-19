@@ -45,6 +45,26 @@ export default function Monitoring() {
         }
     });
 
+    const compressMutation = useMutation({
+        mutationFn: async () => {
+            const hostname = window.location.hostname;
+            const response = await fetch(`http://${hostname}:3000/api/compress-tables`, {
+                method: 'POST',
+            });
+            return response.json();
+        },
+        onSuccess: (data) => {
+            queryClient.invalidateQueries({ queryKey: ['monitoring'] });
+            alert(`Compression complete!\nSaved: ${data.saved_mb} MB\nTables: ${data.tables_compressed}`);
+        }
+    });
+
+    const handleBackup = () => {
+        const hostname = window.location.hostname;
+        const url = `http://${hostname}:3000/api/backup?type=full`;
+        window.open(url, '_blank');
+    };
+
     if (isLoading) {
         return (
             <div className="min-h-screen bg-background">
@@ -143,6 +163,46 @@ export default function Monitoring() {
                                 </div>
                             </div>
                         )}
+                    </div>
+
+                    {/* Database Management Actions */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                        {/* Compression */}
+                        <div className="bg-card/50 rounded-lg p-6 border border-border">
+                            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                                <Database className="w-5 h-5 text-primary" />
+                                Database Optimization
+                            </h3>
+                            <p className="text-sm text-muted-foreground mb-4">
+                                Compress tables to save disk space without losing data.
+                            </p>
+                            <Button
+                                onClick={() => compressMutation.mutate()}
+                                disabled={compressMutation.isPending}
+                                variant="secondary"
+                                className="w-full"
+                            >
+                                {compressMutation.isPending ? 'Compressing...' : 'Compress Tables'}
+                            </Button>
+                        </div>
+
+                        {/* Backup */}
+                        <div className="bg-card/50 rounded-lg p-6 border border-border">
+                            <h3 className="text-lg font-semibold text-foreground mb-4 flex items-center gap-2">
+                                <HardDrive className="w-5 h-5 text-success" />
+                                Backup
+                            </h3>
+                            <p className="text-sm text-muted-foreground mb-4">
+                                Download a full SQL backup of the database.
+                            </p>
+                            <Button
+                                onClick={handleBackup}
+                                variant="outline"
+                                className="w-full border-success text-success hover:bg-success hover:text-white"
+                            >
+                                Download Backup
+                            </Button>
+                        </div>
                     </div>
 
                     {/* Batch Deletion */}
