@@ -1,9 +1,9 @@
 # AIRBAND Customers Log Management (CLM)
 
-**Version:** 2.0.0  
+**Version:** 3.0.0  
 **Status:** Production Ready ✅
 
-A comprehensive log management system for Mikrotik/RADIUS logs with real-time monitoring, analytics, and database optimization.
+A comprehensive log management system for Mikrotik/RADIUS logs with real-time monitoring, analytics, user authentication, and database optimization.
 
 ## 🚀 Features
 
@@ -13,6 +13,8 @@ A comprehensive log management system for Mikrotik/RADIUS logs with real-time mo
 - **PPPoE Username Extraction**: Parse and store usernames from Mikrotik logs
 - **Advanced Search & Filtering**: Filter by date, IP, user, protocol
 - **Responsive UI**: Modern dark theme with glassmorphism
+- **🔐 User Authentication**: Secure login system with role-based access control
+- **👥 User Management**: Admin interface to create, update, and delete users
 
 ### Analytics & Monitoring
 - **Statistics Dashboard**: 
@@ -24,7 +26,7 @@ A comprehensive log management system for Mikrotik/RADIUS logs with real-time mo
   - Real-time size tracking
   - Disk space monitoring
   - Automated alerts (>1GB, >5GB)
-  - Table-level metrics
+  - Table-level metrics with pagination (25 items per page)
 
 ### Data Management
 - **Export Capabilities**:
@@ -36,15 +38,16 @@ A comprehensive log management system for Mikrotik/RADIUS logs with real-time mo
   - Date range backup
   - SQL format (mysqldump)
 - **Batch Operations**:
-  - Delete logs by date range
+  - Delete logs by date range (Admin only)
   - Double confirmation required
   - Safety warnings
 
 ### Optimization
 - **InnoDB Compression**:
-  - One-click table compression
+  - One-click table compression (Admin only)
   - 50-70% space reduction
   - Automatic for new tables
+  - Fixed progress display with toast notifications
 - **Schema Optimization**:
   - Optimized column types
   - Efficient indexing
@@ -54,11 +57,23 @@ A comprehensive log management system for Mikrotik/RADIUS logs with real-time mo
   - Gzip compression
   - Archive search (planned)
 
+### Security & Access Control
+- **Authentication System**:
+  - Session-based authentication with JWT-style tokens
+  - Password hashing with SHA-256
+  - 24-hour session expiration
+- **Role-Based Access**:
+  - **Admin**: Full access to all features including user management, compression, and deletion
+  - **User**: Read-only access to logs, statistics, and monitoring
+- **Protected Endpoints**: All API routes require authentication
+- **Default Credentials**: admin / admin123 (change after first login)
+
 ### System Status
 - **Live Indicators**:
   - Mikrotik connection status (green/gray)
   - Auto-refresh every 5 seconds
   - Last log timestamp
+- **User Session**: Display logged-in username and logout option
 - **RADIUS Integration**: Placeholder for future
 
 ## 📋 Tech Stack
@@ -186,14 +201,41 @@ node dist/archive.js
 
 ## 📝 API Endpoints
 
-- `GET /api/status` - System heartbeat
-- `GET /api/logs` - Fetch logs with filters
-- `GET /api/stats?date=YYYY-MM-DD` - Statistics
-- `GET /api/monitoring` - Database metrics
-- `GET /api/export?date=YYYY-MM-DD&format=csv|xlsx` - Export
+### Authentication
+- `POST /api/auth/login` - User login
+- `GET /api/auth/verify` - Verify session token
+- `POST /api/auth/logout` - User logout
+
+### User Management (Admin Only)
+- `GET /api/users` - List all users
+- `POST /api/users` - Create new user
+- `PUT /api/users/:id` - Update user
+- `DELETE /api/users/:id` - Delete user
+
+### Log Management
+- `GET /api/status` - System heartbeat (authenticated)
+- `GET /api/logs` - Fetch logs with filters (authenticated)
+- `GET /api/stats?date=YYYY-MM-DD` - Statistics (authenticated)
+- `GET /api/monitoring` - Database metrics (authenticated)
+- `GET /api/export?date=YYYY-MM-DD&format=csv|xlsx` - Export (authenticated)
+
+### Database Operations (Admin Only)
 - `GET /api/backup?start_date=&end_date=` - Database backup
 - `POST /api/compress-tables` - Compress tables
 - `POST /api/delete-logs` - Batch deletion
+
+## 🔐 First Time Setup
+
+After installation, the system creates a default admin user:
+- **Username**: `admin`
+- **Password**: `admin123`
+
+⚠️ **Important**: Change the default password immediately after first login!
+
+1. Login with default credentials
+2. Navigate to **Settings** (admin only)
+3. Edit your admin user
+4. Set a strong new password
 
 ## 🔄 Updates
 
@@ -211,6 +253,21 @@ pm2 restart clm-backend
 ```
 
 ## 📈 Version History
+
+### v3.0.0 (2025-12-20) - Security & UX Update
+- 🔐 **Authentication System**: Secure login with session management
+- 👥 **User Management**: Admin interface for creating/managing users
+- 🛡️ **Role-Based Access Control**: Admin and User roles with different permissions
+- ✨ **Settings Page**: User administration interface (admin only)
+- 🎨 **Improved Compression Feedback**: Toast notifications instead of alerts
+- 📄 **Log Tables Pagination**: 25 items per page for better performance
+- 🔒 **Protected API Endpoints**: All routes now require authentication
+- 🎯 **User Session Display**: Show logged-in user and logout option in header
+- ⚠️ **Admin-Only Operations**: Compression and deletion restricted to admins
+- 📝 **Security**: SHA-256 password hashing with 24-hour session expiration
+
+### v2.0.1 (2025-12-19)
+- 🐛 Monitoring Fixes + DB Optimization (Compression)
 
 ### v2.0.0 (2025-12-18)
 - ✨ Statistics dashboard with charts

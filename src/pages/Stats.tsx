@@ -16,7 +16,12 @@ export default function Stats() {
         queryKey: ['stats', selectedDate],
         queryFn: async () => {
             const hostname = window.location.hostname;
-            const response = await fetch(`http://${hostname}:3000/api/stats?date=${selectedDate}`);
+            const token = localStorage.getItem('auth_token');
+            const response = await fetch(`http://${hostname}:3000/api/stats?date=${selectedDate}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             return response.json();
         },
     });

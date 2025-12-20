@@ -3,6 +3,17 @@ import cors from 'cors';
 import { startSyslogServer } from './syslog';
 import { pool, getTableName } from './db';
 import dotenv from 'dotenv';
+import { 
+    initAuthTables, 
+    authenticateUser, 
+    verifySession, 
+    logout,
+    getAllUsers,
+    createUser,
+    updateUser,
+    deleteUser,
+    Session
+} from './auth';
 
 dotenv.config();
 
@@ -19,8 +30,166 @@ export const updateLastLogReceived = () => {
 app.use(cors());
 app.use(express.json());
 
-// API: System Status
-app.get('/api/status', (req, res) => {
+// Auth middleware
+const requireAuth = (req: any, res: any, next: any) => {
+    const token = req.headers['authorization']?.replace('Bearer ', '');
+    
+    if (!token) {
+        return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const session = verifySession(token);
+    if (!session) {
+        return res.status(401).json({ error: 'Invalid or expired session' });
+    }
+
+    req.user = session;
+    next();
+};
+
+// Admin-only middleware
+const requireAdmin = (req: any, res: any, next: any) => {
+    if (req.user.role !== 'admin') {
+        return res.status(403).json({ error: 'Forbidden: Admin access required' });
+    }
+    next();
+};
+
+// === AUTH ENDPOINTS ===
+
+// Login
+app.post('/api/auth/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        if (!username || !password) {
+            return res.status(400).json({ error: 'Username and password required' });
+        }
+
+        const session = await authenticateUser(username, password);
+        
+        if (!session) {
+            return res.status(401).json({ error: 'Invalid credentials' });
+        }
+
+        res.json({
+            success: true,
+            token: session.id,
+            user: {
+                username: session.username,
+                role: session.role
+            }
+        });
+    } catch (error) {
+        console.error('Login error:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Verify session
+app.get('/api/auth/verify', requireAuth, (req: any, res) => {
+    res.json({
+        success: true,
+        user: {
+            username: req.user.username,
+            role: req.user.role
+        }
+    });
+});
+
+// Logout
+app.post('/api/auth/logout', requireAuth, (req: any, res) => {
+    const token = req.headers['authorization']?.replace('Bearer ', '');
+    logout(token!);
+    res.json({ success: true });
+});
+
+// Get all users (admin only)
+app.get('/api/users', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const users = await getAllUsers();
+        res.json(users);
+    } catch (error) {
+        console.error('Error fetching users:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Create user (admin only)
+app.post('/api/users', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const { username, password, full_name, role } = req.body;
+
+        if (!username || !password || !full_name || !role) {
+            return res.status(400).json({ error: 'All fields required' });
+        }
+
+        if (role !== 'admin' && role !== 'user') {
+            return res.status(400).json({ error: 'Invalid role' });
+        }
+
+        const success = await createUser(username, password, full_name, role);
+        
+        if (!success) {
+            return res.status(400).json({ error: 'Username already exists' });
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error creating user:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Update user (admin only)
+app.put('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const { full_name, role, password } = req.body;
+
+        if (!full_name || !role) {
+            return res.status(400).json({ error: 'Full name and role required' });
+        }
+
+        if (role !== 'admin' && role !== 'user') {
+            return res.status(400).json({ error: 'Invalid role' });
+        }
+
+        const success = await updateUser(id, full_name, role, password);
+        
+        if (!success) {
+            return res.status(400).json({ error: 'Update failed' });
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating user:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// Delete user (admin only)
+app.delete('/api/users/:id', requireAuth, requireAdmin, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+
+        const success = await deleteUser(id);
+        
+        if (!success) {
+            return res.status(400).json({ error: 'Cannot delete last admin user' });
+        }
+
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting user:', error);
+        res.status(500).json({ error: 'Internal Server Error' });
+    }
+});
+
+// === PROTECTED ENDPOINTS ===
+
+// API: System Status (now protected)
+app.get('/api/status', requireAuth, (req, res) => {
     const now = new Date();
     const isOnline = lastLogReceived && (now.getTime() - lastLogReceived.getTime()) < 30000; // 30 seconds
 
@@ -34,6 +203,12 @@ app.get('/api/status', (req, res) => {
 // API: Export Logs as CSV
 app.get('/api/export', async (req, res) => {
     try {
+        // Auth check - support both header and query param for file downloads
+        const token = req.headers['authorization']?.replace('Bearer ', '') || req.query.token as string;
+        if (!token || !verifySession(token)) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
         const { date, format = 'csv' } = req.query;
 
         let targetTable = getTableName();
@@ -106,7 +281,7 @@ app.get('/api/export', async (req, res) => {
 });
 
 // API: Database Monitoring
-app.get('/api/monitoring', async (req, res) => {
+app.get('/api/monitoring', requireAuth, async (req, res) => {
     try {
         // Get all log tables
         const [tables]: any = await pool.query(`
@@ -167,6 +342,12 @@ app.get('/api/monitoring', async (req, res) => {
 // API: Database Backup
 app.get('/api/backup', async (req, res) => {
     try {
+        // Auth check - support both header and query param for file downloads
+        const token = req.headers['authorization']?.replace('Bearer ', '') || req.query.token as string;
+        if (!token || !verifySession(token)) {
+            return res.status(401).json({ error: 'Unauthorized' });
+        }
+
         const { start_date, end_date } = req.query;
         const { execSync } = require('child_process');
         const fs = require('fs');
@@ -239,7 +420,7 @@ app.get('/api/backup', async (req, res) => {
 });
 
 // API: Compress Tables
-app.post('/api/compress-tables', async (req, res) => {
+app.post('/api/compress-tables', requireAuth, requireAdmin, async (req, res) => {
     try {
         // Get all log tables
         const [tables]: any = await pool.query(`
@@ -327,7 +508,7 @@ app.post('/api/compress-tables', async (req, res) => {
 });
 
 // API: Delete logs by date range (with safety checks)
-app.post('/api/delete-logs', async (req, res) => {
+app.post('/api/delete-logs', requireAuth, requireAdmin, async (req, res) => {
     try {
         const { start_date, end_date, confirm_token } = req.body;
 
@@ -377,7 +558,7 @@ app.post('/api/delete-logs', async (req, res) => {
 });
 
 // API: Statistics
-app.get('/api/stats', async (req, res) => {
+app.get('/api/stats', requireAuth, async (req, res) => {
     try {
         const { date } = req.query;
 
@@ -436,7 +617,7 @@ app.get('/api/stats', async (req, res) => {
 
 // API: Get Logs
 // Query Params: date (YYYY-MM-DD), search...
-app.get('/api/logs', async (req, res) => {
+app.get('/api/logs', requireAuth, async (req, res) => {
     try {
         const { date, search, page = 1, limit = 50 } = req.query;
 
@@ -497,8 +678,11 @@ app.get('/api/logs', async (req, res) => {
 });
 
 // Start API Server
-app.listen(API_PORT, () => {
+app.listen(API_PORT, async () => {
     console.log(`API Server running on port ${API_PORT}`);
+    
+    // Initialize authentication tables
+    await initAuthTables();
 });
 
 // Start Syslog Receiver

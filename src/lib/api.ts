@@ -4,6 +4,14 @@ import { ConnectionLog, SearchFilters } from '@/types/connection';
 const hostname = window.location.hostname;
 const API_URL = `http://${hostname}:3000/api`;
 
+const getAuthHeaders = () => {
+    const token = localStorage.getItem('auth_token');
+    return {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+    };
+};
+
 export const fetchLogs = async (filters: SearchFilters, page = 1): Promise<{ data: ConnectionLog[], total: number }> => {
     const params = new URLSearchParams();
 
@@ -19,7 +27,9 @@ export const fetchLogs = async (filters: SearchFilters, page = 1): Promise<{ dat
     params.append('page', page.toString());
     params.append('limit', '50');
 
-    const response = await fetch(`${API_URL}/logs?${params.toString()}`);
+    const response = await fetch(`${API_URL}/logs?${params.toString()}`, {
+        headers: getAuthHeaders()
+    });
     if (!response.ok) {
         throw new Error('Failed to fetch logs');
     }

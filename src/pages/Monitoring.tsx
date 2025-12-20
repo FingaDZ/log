@@ -1,23 +1,32 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Header } from '@/components/Header';
-import { Database, HardDrive, AlertTriangle, Trash2 } from 'lucide-react';
+import { Database, HardDrive, AlertTriangle, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { toast } from 'sonner';
 
 export default function Monitoring() {
     const [startDate, setStartDate] = useState('');
     const [endDate, setEndDate] = useState('');
     const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [currentPage, setCurrentPage] = useState(1);
     const queryClient = useQueryClient();
+
+    const ITEMS_PER_PAGE = 25;
 
     const { data, isLoading } = useQuery({
         queryKey: ['monitoring'],
         queryFn: async () => {
             const hostname = window.location.hostname;
-            const response = await fetch(`http://${hostname}:3000/api/monitoring`);
+            const token = localStorage.getItem('auth_token');
+            const response = await fetch(`http://${hostname}:3000/api/monitoring`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             return response.json();
         },
         refetchInterval: 30000, // Refresh every 30 seconds
@@ -26,9 +35,13 @@ export default function Monitoring() {
     const deleteMutation = useMutation({
         mutationFn: async () => {
             const hostname = window.location.hostname;
+            const token = localStorage.getItem('auth_token');
             const response = await fetch(`http://${hostname}:3000/api/delete-logs`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
                 body: JSON.stringify({
                     start_date: startDate,
                     end_date: endDate,
@@ -48,20 +61,40 @@ export default function Monitoring() {
     const compressMutation = useMutation({
         mutationFn: async () => {
             const hostname = window.location.hostname;
+            const token = localStorage.getItem('auth_token');
             const response = await fetch(`http://${hostname}:3000/api/compress-tables`, {
                 method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
             });
+            if (!response.ok) {
+                throw new Error('Compression failed');
+            }
             return response.json();
         },
         onSuccess: (data) => {
             queryClient.invalidateQueries({ queryKey: ['monitoring'] });
-            alert(`Compression complete!\nSaved: ${data.saved_mb} MB\nTables: ${data.tables_compressed}`);
+            const savedMB = data.total_saved_mb || 0;
+            const compressedCount = data.compressed || 0;
+            const alreadyCompressed = data.already_compressed || 0;
+            
+            toast.success('Compression Complete!', {
+                description: `Saved: ${savedMB.toFixed(2)} MB\nCompressed: ${compressedCount} tables\nAlready compressed: ${alreadyCompressed} tables`,
+                duration: 5000,
+            });
+        },
+        onError: (error: any) => {
+            toast.error('Compression Failed', {
+                description: error.message || 'An error occurred during compression',
+            });
         }
     });
 
     const handleBackup = () => {
         const hostname = window.location.hostname;
-        const url = `http://${hostname}:3000/api/backup?type=full`;
+        const token = localStorage.getItem('auth_token');
+        const url = `http://${hostname}:3000/api/backup?type=full&token=${token}`;
         window.open(url, '_blank');
     };
 
@@ -79,6 +112,13 @@ export default function Monitoring() {
     const summary = data?.summary || {};
     const alerts = data?.alerts || {};
     const diskSpace = data?.disk_space;
+    const allTables = data?.tables || [];
+    
+    // Pagination logic
+    const totalPages = Math.ceil(allTables.length / ITEMS_PER_PAGE);
+    const startIndex = (currentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const paginatedTables = allTables.slice(startIndex, endIndex);
 
     return (
         <div className="min-h-screen bg-background">
@@ -278,7 +318,12 @@ export default function Monitoring() {
 
                     {/* Tables List */}
                     <div className="bg-card/50 rounded-lg p-6 border border-border mt-6">
-                        <h3 className="text-lg font-semibold text-foreground mb-4">Log Tables</h3>
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-foreground">Log Tables</h3>
+                            <div className="text-sm text-muted-foreground">
+                                Showing {startIndex + 1}-{Math.min(endIndex, allTables.length)} of {allTables.length} tables
+                            </div>
+                        </div>
                         <div className="overflow-x-auto">
                             <table className="w-full text-sm">
                                 <thead>
@@ -289,7 +334,7 @@ export default function Monitoring() {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {data?.tables?.map((table: any) => (
+                                    {paginatedTables.map((table: any) => (
                                         <tr key={table.TABLE_NAME} className="border-b border-border/30">
                                             <td className="py-2 font-mono text-xs">{table.TABLE_NAME}</td>
                                             <td className="text-right py-2">{table.size_mb}</td>
@@ -299,6 +344,58 @@ export default function Monitoring() {
                                 </tbody>
                             </table>
                         </div>
+                        
+                        {/* Pagination Controls */}
+                        {totalPages > 1 && (
+                            <div className="flex items-center justify-center gap-2 mt-4">
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                    disabled={currentPage === 1}
+                                >
+                                    <ChevronLeft className="w-4 h-4" />
+                                    Previous
+                                </Button>
+                                
+                                <div className="flex items-center gap-2">
+                                    {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                                        let pageNum;
+                                        if (totalPages <= 5) {
+                                            pageNum = i + 1;
+                                        } else if (currentPage <= 3) {
+                                            pageNum = i + 1;
+                                        } else if (currentPage >= totalPages - 2) {
+                                            pageNum = totalPages - 4 + i;
+                                        } else {
+                                            pageNum = currentPage - 2 + i;
+                                        }
+                                        
+                                        return (
+                                            <Button
+                                                key={pageNum}
+                                                variant={currentPage === pageNum ? "default" : "outline"}
+                                                size="sm"
+                                                onClick={() => setCurrentPage(pageNum)}
+                                                className="w-8 h-8 p-0"
+                                            >
+                                                {pageNum}
+                                            </Button>
+                                        );
+                                    })}
+                                </div>
+                                
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                    disabled={currentPage === totalPages}
+                                >
+                                    Next
+                                    <ChevronRight className="w-4 h-4" />
+                                </Button>
+                            </div>
+                        )}
                     </div>
                 </div>
             </main>

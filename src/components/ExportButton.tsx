@@ -8,13 +8,15 @@ interface ExportButtonProps {
 export function ExportButton({ currentDate }: ExportButtonProps) {
     const handleExportCSV = () => {
         const hostname = window.location.hostname;
-        const url = `http://${hostname}:3000/api/export?date=${currentDate}&format=csv`;
+        const token = localStorage.getItem('auth_token');
+        const url = `http://${hostname}:3000/api/export?date=${currentDate}&format=csv&token=${token}`;
         window.open(url, '_blank');
     };
 
     const handleExportExcel = () => {
         const hostname = window.location.hostname;
-        const url = `http://${hostname}:3000/api/export?date=${currentDate}&format=xlsx`;
+        const token = localStorage.getItem('auth_token');
+        const url = `http://${hostname}:3000/api/export?date=${currentDate}&format=xlsx&token=${token}`;
         window.open(url, '_blank');
     };
 
